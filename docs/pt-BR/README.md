@@ -1,4 +1,4 @@
-**Idioma:** [English](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | Português (BR)
+**Idioma:** [English](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | Português (Brasil) | [Türkçe](../tr/README.md)
 
 # Everything Claude Code
 
@@ -16,15 +16,15 @@
 ![Java](https://img.shields.io/badge/-Java-ED8B00?logo=openjdk&logoColor=white)
 ![Markdown](https://img.shields.io/badge/-Markdown-000000?logo=markdown&logoColor=white)
 
-> **50K+ estrelas** | **6K+ forks** | **30 contribuidores** | **6 idiomas suportados** | **Vencedor do Hackathon Anthropic**
+> **140K+ estrelas** | **21K+ forks** | **170+ contribuidores** | **12+ ecossistemas de linguagem** | **Vencedor do Hackathon Anthropic**
 
 ---
 
 <div align="center">
 
-**🌐 Idioma / Language / 语言**
+**Idioma / Language / 语言 / Dil**
 
-[**English**](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Português (BR)](README.md)
+[**English**](../../README.md) | [简体中文](../../README.zh-CN.md) | [繁體中文](../zh-TW/README.md) | [日本語](../ja-JP/README.md) | [한국어](../ko-KR/README.md) | [Português (Brasil)](README.md) | [Türkçe](../tr/README.md)
 
 </div>
 
@@ -34,7 +34,7 @@
 
 Não são apenas configurações. Um sistema completo: skills, instincts, otimização de memória, aprendizado contínuo, varredura de segurança e desenvolvimento com pesquisa em primeiro lugar. Agentes, hooks, comandos, regras e configurações MCP prontos para produção, desenvolvidos ao longo de 10+ meses de uso intensivo diário construindo produtos reais.
 
-Funciona com **Claude Code**, **Codex**, **Cowork** e outros harnesses de agentes de IA.
+Funciona com **Claude Code**, **Codex**, **Cursor**, **OpenCode**, **Gemini** e outros harnesses de agentes de IA.
 
 ---
 
@@ -80,6 +80,15 @@ Este repositório contém apenas o código. Os guias explicam tudo.
 
 ## O Que Há de Novo
 
+### v2.0.0-rc.1 — Sincronização de Superfície, Fluxos Operacionais e ECC 2.0 Alpha (Abr 2026)
+
+- **Superfície pública sincronizada com o repositório real** — metadados, contagens de catálogo, manifests de plugin e documentação de instalação agora refletem a superfície OSS que realmente é entregue.
+- **Expansão dos fluxos operacionais e externos** — `brand-voice`, `social-graph-ranker`, `customer-billing-ops`, `google-workspace-ops` e skills relacionadas fortalecem a trilha operacional dentro do mesmo sistema.
+- **Ferramentas de mídia e lançamento** — `manim-video`, `remotion-video-creation` e os fluxos de publicação social colocam explicadores técnicos e lançamento no mesmo repositório.
+- **Crescimento de framework e superfície de produto** — `nestjs-patterns`, superfícies de instalação mais ricas para Codex/OpenCode e melhorias de empacotamento cross-harness ampliam o uso além do Claude Code.
+- **ECC 2.0 alpha já está no repositório** — o plano de controle em Rust dentro de `ecc2/` já compila localmente e expõe `dashboard`, `start`, `sessions`, `status`, `stop`, `resume` e `daemon`.
+- **Fortalecimento do ecossistema** — AgentShield, controles de custo do ECC Tools, trabalho no portal de billing e a renovação do site continuam sendo entregues ao redor do plugin principal.
+
 ### v1.9.0 — Instalação Seletiva e Expansão de Idiomas (Mar 2026)
 
 - **Arquitetura de instalação seletiva** — Pipeline de instalação baseado em manifesto com `install-plan.js` e `install-apply.js` para instalação de componentes direcionada. O state store rastreia o que está instalado e habilita atualizações incrementais.
@@ -89,7 +98,7 @@ Este repositório contém apenas o código. Os guias explicam tudo.
 - **Revisão de orquestração** — Pontuação de auditoria de harness tornado determinístico, status de orquestração e compatibilidade de launcher reforçados, prevenção de loop de observer com guarda de 5 camadas.
 - **Confiabilidade do observer** — Correção de explosão de memória com throttling e tail sampling, correção de acesso sandbox, lógica de início preguiçoso e guarda de reentrância.
 - **12 ecossistemas de linguagem** — Novas regras para Java, PHP, Perl, Kotlin/Android/KMP, C++ e Rust se juntam ao TypeScript, Python, Go e regras comuns existentes.
-- **Contribuições da comunidade** — Traduções para coreano e chinês, hook de segurança InsAIts, otimização de hook biome, skills VideoDB, skills operacionais Evos, instalador PowerShell, suporte ao IDE Antigravity.
+- **Contribuições da comunidade** — Traduções para coreano e chinês, otimização de hook biome, skills VideoDB, skills operacionais Evos, instalador PowerShell, suporte ao IDE Antigravity.
 - **CI reforçado** — 19 correções de falhas de teste, aplicação de contagem de catálogo, validação de manifesto de instalação e suíte de testes completa no verde.
 
 ### v1.8.0 — Sistema de Desempenho de Harness (Mar 2026)
@@ -104,7 +113,7 @@ Este repositório contém apenas o código. Os guias explicam tudo.
 
 ---
 
-## 🚀 Início Rápido
+## Início Rápido
 
 Comece em menos de 2 minutos:
 
@@ -112,7 +121,7 @@ Comece em menos de 2 minutos:
 
 ```bash
 # Adicionar marketplace
-/plugin marketplace add affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/everything-claude-code
 
 # Instalar plugin
 /plugin install everything-claude-code@everything-claude-code
@@ -120,7 +129,7 @@ Comece em menos de 2 minutos:
 
 ### Passo 2: Instalar as Regras (Obrigatório)
 
-> ⚠️ **Importante:** Plugins do Claude Code não podem distribuir `rules` automaticamente. Instale-as manualmente:
+> WARNING: **Importante:** Plugins do Claude Code não podem distribuir `rules` automaticamente. Instale-as manualmente:
 
 ```bash
 # Clone o repositório primeiro
@@ -161,11 +170,11 @@ npx ecc-install typescript
 /plugin list everything-claude-code@everything-claude-code
 ```
 
-✨ **Pronto!** Você agora tem acesso a 28 agentes, 116 skills e 59 comandos.
+**Pronto!** Você agora tem acesso a 28 agentes, 116 skills e 59 comandos.
 
 ---
 
-## 🌐 Suporte Multiplataforma
+## Suporte Multiplataforma
 
 Este plugin agora suporta totalmente **Windows, macOS e Linux**, com integração estreita em principais IDEs (Cursor, OpenCode, Antigravity) e harnesses CLI. Todos os hooks e scripts foram reescritos em Node.js para máxima compatibilidade.
 
@@ -212,7 +221,7 @@ export ECC_DISABLED_HOOKS="pre:bash:tmux-reminder,post:edit:typecheck"
 
 ---
 
-## 📦 O Que Está Incluído
+## O Que Está Incluído
 
 ```
 everything-claude-code/
@@ -230,7 +239,7 @@ everything-claude-code/
 
 ---
 
-## 🛠️ Ferramentas do Ecossistema
+## Ferramentas do Ecossistema
 
 ### Criador de Skills
 
@@ -269,7 +278,7 @@ npx ecc-agentshield scan --opus --stream
 npx ecc-agentshield init
 ```
 
-### 🧠 Aprendizado Contínuo v2
+### Aprendizado Contínuo v2
 
 O sistema de aprendizado baseado em instincts aprende automaticamente seus padrões:
 
@@ -282,7 +291,7 @@ O sistema de aprendizado baseado em instincts aprende automaticamente seus padr�
 
 ---
 
-## 📋 Requisitos
+## Requisitos
 
 ### Versão do Claude Code CLI
 
@@ -295,13 +304,13 @@ claude --version
 
 ---
 
-## 📥 Instalação
+## Instalação
 
 ### Opção 1: Instalar como Plugin (Recomendado)
 
 ```bash
 # Adicionar este repositório como marketplace
-/plugin marketplace add affaan-m/everything-claude-code
+/plugin marketplace add https://github.com/affaan-m/everything-claude-code
 
 # Instalar o plugin
 /plugin install everything-claude-code@everything-claude-code
@@ -312,7 +321,7 @@ Ou adicione diretamente ao seu `~/.claude/settings.json`:
 ```json
 {
   "extraKnownMarketplaces": {
-    "everything-claude-code": {
+    "ecc": {
       "source": {
         "source": "github",
         "repo": "affaan-m/everything-claude-code"
@@ -343,7 +352,7 @@ Ou adicione diretamente ao seu `~/.claude/settings.json`:
 
 ---
 
-### 🔧 Opção 2: Instalação Manual
+### Opção 2: Instalação Manual
 
 ```bash
 # Clonar o repositório
@@ -365,7 +374,7 @@ cp -r everything-claude-code/.agents/skills/* ~/.claude/skills/
 
 ---
 
-## 🎯 Conceitos-Chave
+## Conceitos-Chave
 
 ### Agentes
 
@@ -395,7 +404,7 @@ Regras são diretrizes sempre seguidas, organizadas em `common/` (agnóstico à 
 
 ---
 
-## 🗺️ Qual Agente Devo Usar?
+## Qual Agente Devo Usar?
 
 | Quero... | Use este comando | Agente usado |
 |----------|-----------------|--------------|
@@ -437,7 +446,7 @@ Regras são diretrizes sempre seguidas, organizadas em `common/` (agnóstico à 
 
 ---
 
-## ❓ FAQ
+## FAQ
 
 <details>
 <summary><b>Como verificar quais agentes/comandos estão instalados?</b></summary>
@@ -476,7 +485,7 @@ Veja [CONTRIBUTING.md](CONTRIBUTING.md). Em resumo:
 
 ---
 
-## 🧪 Executando Testes
+## Executando Testes
 
 ```bash
 # Executar todos os testes
@@ -490,7 +499,7 @@ node tests/hooks/hooks.test.js
 
 ---
 
-## 🤝 Contribuindo
+## Contribuindo
 
 **Contribuições são bem-vindas e incentivadas.**
 
@@ -504,6 +513,6 @@ Por favor contribua! Veja [CONTRIBUTING.md](CONTRIBUTING.md) para diretrizes.
 
 ---
 
-## 📄 Licença
+## Licença
 
 MIT — consulte o [arquivo LICENSE](../../LICENSE) para detalhes.

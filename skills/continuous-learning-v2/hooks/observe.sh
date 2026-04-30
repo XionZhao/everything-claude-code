@@ -27,18 +27,45 @@ if [ -z "$INPUT_JSON" ]; then
   exit 0
 fi
 
+_is_windows_app_installer_stub() {
+  # Windows 10/11 ships an "App Execution Alias" stub at
+  #   %LOCALAPPDATA%\Microsoft\WindowsApps\python.exe
+  #   %LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe
+  # Both are symlinks to AppInstallerPythonRedirector.exe which, when Python
+  # is not installed from the Store, neither launches Python nor honors "-c".
+  # Calls to it hang or print a bare "Python " line, silently breaking every
+  # JSON-parsing step in this hook. Detect and skip such stubs here.
+  local _candidate="$1"
+  [ -z "$_candidate" ] && return 1
+  local _resolved
+  _resolved="$(command -v "$_candidate" 2>/dev/null || true)"
+  [ -z "$_resolved" ] && return 1
+  case "$_resolved" in
+    *AppInstallerPythonRedirector.exe|*AppInstallerPythonRedirector.EXE) return 0 ;;
+  esac
+  # Also resolve one level of symlink on POSIX-like shells (Git Bash, WSL).
+  if command -v readlink >/dev/null 2>&1; then
+    local _target
+    _target="$(readlink -f "$_resolved" 2>/dev/null || readlink "$_resolved" 2>/dev/null || true)"
+    case "$_target" in
+      *AppInstallerPythonRedirector.exe|*AppInstallerPythonRedirector.EXE) return 0 ;;
+    esac
+  fi
+  return 1
+}
+
 resolve_python_cmd() {
   if [ -n "${CLV2_PYTHON_CMD:-}" ] && command -v "$CLV2_PYTHON_CMD" >/dev/null 2>&1; then
     printf '%s\n' "$CLV2_PYTHON_CMD"
     return 0
   fi
 
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1 && ! _is_windows_app_installer_stub python3; then
     printf '%s\n' python3
     return 0
   fi
 
-  if command -v python >/dev/null 2>&1; then
+  if command -v python >/dev/null 2>&1 && ! _is_windows_app_installer_stub python; then
     printf '%s\n' python
     return 0
   fi
@@ -52,12 +79,18 @@ if [ -z "$PYTHON_CMD" ]; then
   exit 0
 fi
 
+# Propagate our stub-aware selection so detect-project.sh (which is sourced
+# below) does not re-resolve and silently fall back to the App Installer stub.
+# detect-project.sh honors an already-set CLV2_PYTHON_CMD.
+export CLV2_PYTHON_CMD="${CLV2_PYTHON_CMD:-$PYTHON_CMD}"
+
 # ─────────────────────────────────────────────
 # Extract cwd from stdin for project detection
 # ─────────────────────────────────────────────
 
 # Extract cwd from the hook JSON to use for project detection.
-# This avoids spawning a separate git subprocess when cwd is available.
+# If cwd is a subdirectory inside a git repo, resolve it to the repo root so
+# observations attach to the project instead of a nested path.
 STDIN_CWD=$(echo "$INPUT_JSON" | "$PYTHON_CMD" -c '
 import json, sys
 try:
@@ -70,7 +103,8 @@ except(KeyError, TypeError, ValueError):
 
 # If cwd was provided in stdin, use it for project detection
 if [ -n "$STDIN_CWD" ] && [ -d "$STDIN_CWD" ]; then
-  export CLAUDE_PROJECT_DIR="$STDIN_CWD"
+  _GIT_ROOT=$(git -C "$STDIN_CWD" rev-parse --show-toplevel 2>/dev/null || true)
+  export CLAUDE_PROJECT_DIR="${_GIT_ROOT:-$STDIN_CWD}"
 fi
 
 # ─────────────────────────────────────────────
@@ -101,7 +135,7 @@ fi
 # Non-interactive SDK automation is still filtered by Layers 2-5 below
 # (ECC_HOOK_PROFILE=minimal, ECC_SKIP_OBSERVE=1, agent_id, path exclusions).
 case "${CLAUDE_CODE_ENTRYPOINT:-cli}" in
-  cli|sdk-ts) ;;
+  cli|sdk-ts|claude-desktop) ;;
   *) exit 0 ;;
 esac
 
@@ -350,7 +384,7 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
         fi
       ) 9>"$LAZY_START_LOCK"
     else
-      # macOS fallback: use lockfile if available, otherwise skip
+      # macOS fallback: use lockfile if available, otherwise mkdir-based lock
       if command -v lockfile >/dev/null 2>&1; then
         # Use subshell to isolate exit and add trap for cleanup
         (
@@ -363,6 +397,17 @@ if [ "$OBSERVER_ENABLED" = "true" ]; then
           fi
           rm -f "$LAZY_START_LOCK" 2>/dev/null || true
         )
+      else
+        # POSIX fallback: mkdir is atomic -- fails if dir already exists
+        (
+          trap 'rmdir "${LAZY_START_LOCK}.d" 2>/dev/null || true' EXIT
+          mkdir "${LAZY_START_LOCK}.d" 2>/dev/null || exit 0
+          _CHECK_OBSERVER_RUNNING "${PROJECT_DIR}/.observer.pid" || true
+          _CHECK_OBSERVER_RUNNING "${CONFIG_DIR}/.observer.pid" || true
+          if [ ! -f "${PROJECT_DIR}/.observer.pid" ] && [ ! -f "${CONFIG_DIR}/.observer.pid" ]; then
+            nohup "${SKILL_ROOT}/agents/start-observer.sh" start >/dev/null 2>&1 &
+          fi
+        )
       fi
     fi
   fi
@@ -373,6 +418,9 @@ fi
 # which caused runaway parallel Claude analysis processes.
 SIGNAL_EVERY_N="${ECC_OBSERVER_SIGNAL_EVERY_N:-20}"
 SIGNAL_COUNTER_FILE="${PROJECT_DIR}/.observer-signal-counter"
+ACTIVITY_FILE="${PROJECT_DIR}/.observer-last-activity"
+
+touch "$ACTIVITY_FILE" 2>/dev/null || true
 
 should_signal=0
 if [ -f "$SIGNAL_COUNTER_FILE" ]; then
