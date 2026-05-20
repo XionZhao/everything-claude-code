@@ -24,7 +24,12 @@ const DEFAULT_TTL_MS = 2 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_BACKOFF_MS = 30 * 1000;
 const MAX_BACKOFF_MS = 10 * 60 * 1000;
-const HEALTHY_HTTP_CODES = new Set([200, 201, 202, 204, 301, 302, 303, 304, 307, 308, 405]);
+// The preflight HTTP probe only checks reachability; it does not have access to
+// Claude Code's stored OAuth bearer token. Treat auth-gated responses as
+// reachable so the real MCP client can attempt the authenticated call. A
+// Streamable HTTP MCP server can also return 406 to a bare GET that omits
+// Accept: text/event-stream; that still proves the endpoint is alive.
+const HEALTHY_HTTP_CODES = new Set([200, 201, 202, 204, 301, 302, 303, 304, 307, 308, 400, 401, 403, 405, 406]);
 const RECONNECT_STATUS_CODES = new Set([401, 403, 429, 503]);
 const FAILURE_PATTERNS = [
   { code: 401, pattern: /\b401\b|unauthori[sz]ed|auth(?:entication)?\s+(?:failed|expired|invalid)/i },
@@ -99,15 +104,21 @@ function saveState(filePath, state) {
 function readRawStdin() {
   return new Promise(resolve => {
     let raw = '';
+    let truncated = /^(1|true|yes)$/i.test(String(process.env.ECC_HOOK_INPUT_TRUNCATED || ''));
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => {
       if (raw.length < MAX_STDIN) {
         const remaining = MAX_STDIN - raw.length;
         raw += chunk.substring(0, remaining);
+        if (chunk.length > remaining) {
+          truncated = true;
+        }
+      } else {
+        truncated = true;
       }
     });
-    process.stdin.on('end', () => resolve(raw));
-    process.stdin.on('error', () => resolve(raw));
+    process.stdin.on('end', () => resolve({ raw, truncated }));
+    process.stdin.on('error', () => resolve({ raw, truncated }));
   });
 }
 
@@ -153,6 +164,18 @@ function extractMcpTarget(input) {
     server: segments[0],
     tool: segments.slice(1).join('__')
   };
+}
+
+function extractMcpTargetFromRaw(raw) {
+  const toolNameMatch = raw.match(/"(?:tool_name|name)"\s*:\s*"([^"]+)"/);
+  const serverMatch = raw.match(/"(?:server|mcp_server|connector)"\s*:\s*"([^"]+)"/);
+  const toolMatch = raw.match(/"(?:tool|mcp_tool)"\s*:\s*"([^"]+)"/);
+
+  return extractMcpTarget({
+    tool_name: toolNameMatch ? toolNameMatch[1] : '',
+    server: serverMatch ? serverMatch[1] : undefined,
+    tool: toolMatch ? toolMatch[1] : undefined
+  });
 }
 
 function resolveServerConfig(serverName) {
@@ -285,7 +308,6 @@ function probeCommandServer(serverName, config) {
       ...(config.env && typeof config.env === 'object' && !Array.isArray(config.env) ? config.env : {})
     };
 
-    let stderr = '';
     let done = false;
 
     function finish(result) {
@@ -294,70 +316,167 @@ function probeCommandServer(serverName, config) {
       resolve(result);
     }
 
-    let child;
-    try {
-      child = spawn(command, args, {
-        env: mergedEnv,
-        cwd: process.cwd(),
-        stdio: ['pipe', 'ignore', 'pipe']
-      });
-    } catch (error) {
-      finish({
-        ok: false,
-        statusCode: null,
-        reason: error.message
-      });
-      return;
-    }
+    // On Windows, commands like 'npx' are commonly exposed as npx.cmd.
+    // Probe bare PATH commands through platform-extension fallbacks, but keep
+    // absolute/relative path commands as a single candidate so their existing
+    // ENOENT failure semantics stay intact.
+    const commandIsString = typeof command === 'string' && command.length > 0;
+    const isPathLike = commandIsString && (
+      path.isAbsolute(command)
+      || command.includes('/')
+      || command.includes('\\')
+    );
+    const candidates = process.platform === 'win32'
+      && commandIsString
+      && !path.extname(command)
+      && !isPathLike
+        ? [command, `${command}.cmd`, `${command}.exe`, `${command}.bat`]
+        : [command];
 
-    child.stderr.on('data', chunk => {
-      if (stderr.length < 4000) {
-        const remaining = 4000 - stderr.length;
-        stderr += String(chunk).slice(0, remaining);
+    // cmd.exe treats these as operators, grouping syntax, expansion markers,
+    // separators, or argument boundaries. Do not route such command strings
+    // through shell mode.
+    const UNSAFE_SHELL_CHARS = /[&|<>^%!()\s;]/;
+
+    function attempt(idx) {
+      const tryCommand = candidates[idx];
+      const isLast = idx + 1 >= candidates.length;
+      let stderr = '';
+      let attemptDone = false;
+      let timer = null;
+
+      function retryNext() {
+        if (attemptDone) return;
+        attemptDone = true;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        attempt(idx + 1);
       }
-    });
 
-    child.on('error', error => {
-      finish({
-        ok: false,
-        statusCode: null,
-        reason: error.message
-      });
-    });
+      function attemptFinish(result) {
+        if (attemptDone) return;
+        attemptDone = true;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        finish(result);
+      }
 
-    child.on('exit', (code, signal) => {
-      finish({
-        ok: false,
-        statusCode: code,
-        reason: stderr.trim() || `process exited before handshake (${signal || code || 'unknown'})`
-      });
-    });
+      // Node 18.20+/20.12+ refuse to spawn .cmd/.bat directly on Windows
+      // after the CVE-2024-27980 mitigation. Only those extension candidates
+      // go through cmd.exe, after the command string is shell-character clean.
+      const useShell = process.platform === 'win32'
+        && typeof tryCommand === 'string'
+        && /\.(cmd|bat)$/i.test(tryCommand)
+        && !UNSAFE_SHELL_CHARS.test(tryCommand);
 
-    const timer = setTimeout(() => {
+      let child;
       try {
-        child.kill('SIGTERM');
-      } catch {
-        // ignore
+        child = spawn(tryCommand, args, {
+          env: mergedEnv,
+          cwd: process.cwd(),
+          stdio: ['pipe', 'ignore', 'pipe'],
+          shell: useShell
+        });
+      } catch (error) {
+        if ((error.code === 'ENOENT' || error.code === 'EINVAL') && !isLast) {
+          retryNext();
+          return;
+        }
+        attemptFinish({
+          ok: false,
+          statusCode: null,
+          reason: error.message
+        });
+        return;
       }
 
-      setTimeout(() => {
+      child.stderr.on('data', chunk => {
+        if (stderr.length < 4000) {
+          const remaining = 4000 - stderr.length;
+          stderr += String(chunk).slice(0, remaining);
+        }
+      });
+
+      child.on('error', error => {
+        if ((error.code === 'ENOENT' || error.code === 'EINVAL') && !isLast) {
+          retryNext();
+          return;
+        }
+        attemptFinish({
+          ok: false,
+          statusCode: null,
+          reason: error.message
+        });
+      });
+
+      child.on('exit', (code, signal) => {
+        attemptFinish({
+          ok: false,
+          statusCode: code,
+          reason: stderr.trim() || `process exited before handshake (${signal || code || 'unknown'})`
+        });
+      });
+
+      timer = setTimeout(() => {
+        // A fast-crashing stdio server can finish before the timer callback runs
+        // on a loaded machine. Check the process state again before classifying it
+        // as healthy on timeout.
+        if (child.exitCode !== null || child.signalCode !== null) {
+          attemptFinish({
+            ok: false,
+            statusCode: child.exitCode,
+            reason: stderr.trim() || `process exited before handshake (${child.signalCode || child.exitCode || 'unknown'})`
+          });
+          return;
+        }
+
         try {
-          child.kill('SIGKILL');
+          if (useShell && child.pid && process.platform === 'win32') {
+            // When spawned via shell on Windows, child is cmd.exe. kill() only
+            // terminates the shell and leaves the real server process orphaned.
+            // taskkill /T kills the entire process tree rooted at cmd.exe.
+            const killResult = spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+              stdio: 'ignore',
+              windowsHide: true
+            });
+            if (killResult.error || (typeof killResult.status === 'number' && killResult.status !== 0)) {
+              // taskkill not on PATH, permission denied, or already exited.
+              // Best-effort fallback: signal the cmd.exe shell directly. The
+              // child tree may still leak if it already detached, but this at
+              // least kills the shell we spawned.
+              try { child.kill('SIGKILL'); } catch { /* ignore */ }
+            }
+          } else {
+            child.kill('SIGTERM');
+            setTimeout(() => {
+              try {
+                child.kill('SIGKILL');
+              } catch {
+                // ignore
+              }
+            }, 200).unref?.();
+          }
         } catch {
           // ignore
         }
-      }, 200).unref?.();
 
-      finish({
-        ok: true,
-        statusCode: null,
-        reason: `${serverName} accepted a new stdio process`
-      });
-    }, timeoutMs);
+        attemptFinish({
+          ok: true,
+          statusCode: null,
+          reason: `${serverName} accepted a new stdio process`
+        });
+      }, timeoutMs);
 
-    if (typeof timer.unref === 'function') {
-      timer.unref();
+      if (typeof timer.unref === 'function') {
+        timer.unref();
+      }
     }
+
+    attempt(0);
   });
 }
 
@@ -559,13 +678,26 @@ async function handlePostToolUseFailure(rawInput, input, target, statePathValue,
 }
 
 async function main() {
-  const rawInput = await readRawStdin();
+  const { raw: rawInput, truncated } = await readRawStdin();
   const input = safeParse(rawInput);
-  const target = extractMcpTarget(input);
+  const target = extractMcpTarget(input) || (truncated ? extractMcpTargetFromRaw(rawInput) : null);
 
   if (!target) {
     process.stdout.write(rawInput);
     process.exit(0);
+    return;
+  }
+
+  if (truncated) {
+    const limit = Number(process.env.ECC_HOOK_INPUT_MAX_BYTES) || MAX_STDIN;
+    const logs = [
+      shouldFailOpen()
+        ? `[MCPHealthCheck] Hook input exceeded ${limit} bytes while checking ${target.server}; allowing ${target.tool || 'tool'} because fail-open mode is enabled`
+        : `[MCPHealthCheck] Hook input exceeded ${limit} bytes while checking ${target.server}; blocking ${target.tool || 'tool'} to avoid bypassing MCP health checks`
+    ];
+    emitLogs(logs);
+    process.stdout.write(rawInput);
+    process.exit(shouldFailOpen() ? 0 : 2);
     return;
   }
 
